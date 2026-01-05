@@ -1,30 +1,24 @@
 import os
 import pandas as pd
 
+def cargarDatos():
 
-class DataLoader:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
+    # 1. Ruta absoluta del directorio donde está el archivo en la carpeta src
+    ruta_actual = os.path.dirname(os.path.abspath(__file__))
+    
+    # 2. Subir un nivel de carpetas para llegar a la carpeta donde está la base de datos
+    ruta_proyecto = os.path.dirname(ruta_actual)
 
-    def validate_file(self) -> None:
+    # 3. Construyamos la ruta completa a la base de datos
+    ruta_excel = os.path.join(ruta_proyecto, "Base_de_datos.xlsx")
 
-        if not os.path.exists(self.file_path):
-            raise FileNotFoundError(f"No se encontro el archivo: {self.file_path}")
+    # 4. Leemos los datos y los imprimimos 
+    df = pd.read_excel(ruta_excel)
 
-        if not self.file_path.lower().endswith((".csv", ".xlsx")):
-            raise ValueError("El archivo debe ser .csv o .xlsx")
+    columnas_trampa = ['puntaje', 'saldo_mora', 'saldo_mora_codeudor', 'saldo_total', 'saldo_principal','fecha_prestamo']
+    df = df.drop(columns=columnas_trampa, errors='ignore')
 
-    def load_data(self) -> pd.DataFrame:
-        self.validate_file()
+    return df
 
-        if self.file_path.lower().endswith(".csv"):
-            df = pd.read_csv(self.file_path)
-        else:
-            df = pd.read_excel(self.file_path)
-
-        return df
-
-
-def cargar_datos(file_path: str) -> pd.DataFrame:
-    loader = DataLoader(file_path)
-    return loader.load_data()
+if __name__ == "__main__":
+    datos = cargarDatos()
