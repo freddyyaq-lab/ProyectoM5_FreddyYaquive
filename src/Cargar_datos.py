@@ -1,24 +1,40 @@
-import os
 import pandas as pd
+import os
+import sys
 
-def cargarDatos():
-
-    # 1. Ruta absoluta del directorio donde está el archivo en la carpeta src
-    ruta_actual = os.path.dirname(os.path.abspath(__file__))
+class Cargar_datos:
+    """
+    Clase encargada de la ingesta de datos desde archivos Excel o CSV.
+    """
     
-    # 2. Subir un nivel de carpetas para llegar a la carpeta donde está la base de datos
-    ruta_proyecto = os.path.dirname(ruta_actual)
+    def __init__(self, file_path: str):
+        """
+        Inicializa la clase con la ruta del archivo.
+        :param file_path: Ruta relativa o absoluta al archivo de datos.
+        """
+        self.file_path = file_path
 
-    # 3. Construyamos la ruta completa a la base de datos
-    ruta_excel = os.path.join(ruta_proyecto, "Base_de_datos.xlsx")
+    def carga_datos(self) -> pd.DataFrame:
+        """
+        Carga los datos y devuelve un DataFrame de Pandas.
+        Detecta automáticamente si es Excel (.xlsx) o CSV.
+        """
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"Error: El archivo no se encuentra en la ruta: {self.file_path}")
 
-    # 4. Leemos los datos y los imprimimos 
-    df = pd.read_excel(ruta_excel)
+        print(f"Cargando datos desde: {self.file_path}...")
 
-    columnas_trampa = ['puntaje', 'saldo_mora', 'saldo_mora_codeudor', 'saldo_total', 'saldo_principal','fecha_prestamo']
-    df = df.drop(columns=columnas_trampa, errors='ignore')
+        try:
+            if self.file_path.endswith('.xlsx') or self.file_path.endswith('.xls'):
+                df = pd.read_excel(self.file_path, engine='openpyxl')
+            elif self.file_path.endswith('.csv'):
+                df = pd.read_csv(self.file_path)
+            else:
+                raise ValueError("Formato no soportado. Usa .xlsx o .csv")
 
-    return df
-
-if __name__ == "__main__":
-    datos = cargarDatos()
+            print(f"Carga exitosa. Dimensiones: {df.shape[0]} filas, {df.shape[1]} columnas.")
+            return df
+        
+        except Exception as e:
+            print(f"Error crítico al cargar datos: {e}")
+            sys.exit(1)

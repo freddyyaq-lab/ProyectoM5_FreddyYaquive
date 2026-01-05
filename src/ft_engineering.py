@@ -1,101 +1,123 @@
-# librerías
 import pandas as pd
-from Cargar_datos import cargarDatos
-from sklearn.preprocessing import FunctionTransformer
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, RobustScaler
-from sklearn.model_selection import train_test_split
 
+class FeatureEngineering:
+    """
+    Clase encargada de la transformación de datos, limpieza de leakage
+    y preparación para el entrenamiento.
+    """
 
+    def __init__(self, df: pd.DataFrame, target_col: str = 'Pago_atiempo'):
+        """
+        :param df: DataFrame con los datos crudos.
+        :param target_col: Nombre de la columna objetivo.
+        """
+        self.df = df.copy()
+        self.target_col = target_col
+        self.X_train = None
+        self.X_test = None
+        self.y_train = None
+        self.y_test = None
+        self.preprocessor = None
 
-# carga de datos
-df = cargarDatos()
+    def _drop_manual_columns(self):
+        """
+        Elimina columnas que sabemos por conocimiento de negocio que no sirven
+        o son ruidosas.
+        AQUÍ SE ELIMINA LA FUGA DE INFORMACIÓN (DATOS DEL FUTURO).
+        """
+        cols_to_drop = [
+            'fecha_prestamo',
+            'saldo_mora',
+            'saldo_mora_codeudor',
+            'saldo_total',
+            'saldo_principal',
 
-# preview del data dataset
-df.info()
-# print(df.head())
-# print(df.describe())
+        ]
+        
+        existing_cols = [c for c in cols_to_drop if c in self.df.columns]
+        if existing_cols:
+            print(f"Eliminando columnas manuales: {existing_cols}")
+            self.df.drop(columns=existing_cols, inplace=True)
 
-# Paso 1: features/target split
-X = df.drop('Pago_atiempo', axis=1) # features
-y = df['Pago_atiempo']             # target
+    def _remove_highly_correlated_features(self, threshold=0.90):
+        numeric_df = self.df.select_dtypes(include=[np.number])
+        
+        if self.target_col not in numeric_df.columns:
+            return 
+        
+        correlations = numeric_df.corrwith(numeric_df[self.target_col]).abs()
+        high_corr_cols = correlations[correlations > threshold].index.tolist()
+        
+        if self.target_col in high_corr_cols:
+            high_corr_cols.remove(self.target_col)
+            
+        if high_corr_cols:
+            print(f"Leakage detectado (> {threshold*100}%). Eliminando: {high_corr_cols}")
+            self.df.drop(columns=high_corr_cols, inplace=True)
 
-# Paso 2: definir variables por tipo
-num_features = X.select_dtypes('number').columns
-cat_features = X.select_dtypes('object').columns
+    def create_pipeline(self):
+        X = self.df.drop(columns=[self.target_col])
+        y = self.df[self.target_col]
+        numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
+        for col in categorical_features:
+            X[col] = X[col].astype(str)
 
-# print("Numeric features")
-# print(num_features)
-# print("Categorical features")
-# print(cat_features)
+        print(f"Features Numéricos: {len(numeric_features)}")
+        print(f"Features Categóricos: {len(categorical_features)}")
+        numeric_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')), 
+            ('scaler', StandardScaler())
+        ])
 
-# Paso 3: Crear pipelines para cada ruta
-## Ruta 1: numéricas
-num_transformer =  Pipeline(steps=[
-    ('inputer', SimpleImputer(strategy='mean'))
-]
-)
+        categorical_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='constant', fill_value='Desconocido')),
+            ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+        ])
 
-## Ruta 2: categóricas
-cat_transformer = Pipeline(steps=[
-    ('to_str', FunctionTransformer(lambda x: x.astype(str))),
-    ('inputer', SimpleImputer(strategy='most_frequent')),
-    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
-]
-)
+        # Unir en ColumnTransformer
+        self.preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numeric_transformer, numeric_features),
+                ('cat', categorical_transformer, categorical_features)
+            ]
+        )
 
-# Paso 4: Combinar las 2 rutas en ColumnTransformer
+        return X, y
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', num_transformer, num_features),
-        ('cat', cat_transformer, cat_features)
-    ]
-)
+    def run_split(self, test_size=0.2, random_state=42):
+        self._drop_manual_columns()
+        self._remove_highly_correlated_features(threshold=0.85) 
+        X, y = self.create_pipeline()
 
-# Paso 5: dividar el dataset en train/test (antes de preprocesar)
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state, stratify=y
+        )
+        
+        return self.X_train, self.X_test, self.y_train, self.y_test, self.preprocessor
 
-# Paso 6: Aplicamos el preprocesamiento
+if __name__ == "__main__":
+    try:
+        from Cargar_datos import Cargar_datos
+    except ImportError:
+        try:
+            from Cargar_datos import Cargar_datos
+        except:
+            pass
 
-X_train_processed = preprocessor.fit_transform(X_train)
-X_test_processed = preprocessor.transform(X_test)
-
-# Paso 7: resultados del preprocesamiento 
-
-# print("X_train preprocesados:")
-# print(X_train_processed)
-# print(X_train_processed.shape)
-# print("X_test preprocesados:")
-# print(X_test_processed)
-# print(X_test_processed.shape)
-
-# Paso 8: construimos una función para "exportar": ft_engineering()
-def ft_engineering():
-    num_features = X.select_dtypes('number').columns
-    cat_features = X.select_dtypes('object').columns
-
-    num_transformer =  Pipeline(steps=[
-    ('inputer', SimpleImputer(strategy='mean'))
-    ]
-    )
-
-    cat_transformer = Pipeline(steps=[
-    ('to_str', FunctionTransformer(lambda x: x.astype(str))),
-    ('inputer', SimpleImputer(strategy='most_frequent')),
-    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
-    ]
-    )
-
-    preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', num_transformer, num_features),
-        ('cat', cat_transformer, cat_features)
-    ]
-    )
-
-    return preprocessor
+    # Prueba rápida
+    try:
+        # Ajusta la ruta a tu Excel
+        loader = Cargar_datos("./Base_de_datos.xlsx")
+        df = loader.carga_datos()
+        fe = FeatureEngineering(df)
+        fe.run_split()
+        print("Prueba de Feature Engineering exitosa")
+    except Exception as e:
+        print(f"Error en la prueba: {e}")
